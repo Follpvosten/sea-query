@@ -9,25 +9,35 @@ fn main() {
     let sql = Table::create()
         .table(Character::Table)
         .create_if_not_exists()
-        .col(ColumnDef::new(Character::Id).integer().not_null().auto_increment().primary_key())
-        .col(ColumnDef::new(Character::FontSize).integer())
+        .col(ColumnDef::new(Character::Id).big_integer().not_null().primary_key())
+        .col(ColumnDef::new(Character::FontSize).big_integer())
         .col(ColumnDef::new(Character::Character).string())
+        .col(ColumnDef::new(Character::JsonField).json_binary())
         .build(PostgresQueryBuilder);
 
     let result = client.batch_execute(&sql).unwrap();
     println!("Create table character: {:?}\n", result);
 
     // Create
-
+    let item = CharacterStruct {
+        id: 1,
+        character: "a".into(),
+        font_size: 12,
+        json_field: serde_json::json! {{
+            "a": 25.0,
+            "b": "whatever",
+            "c": {
+                "another": "object",
+                "bla": 1
+            }
+        }},
+    };
     let (sql, values) = Query::insert()
         .into_table(Character::Table)
         .columns(vec![
-            Character::Character, Character::FontSize
+            Character::Id, Character::Character, Character::FontSize, Character::JsonField,
         ])
-        .values_panic(vec![
-            "A".into(),
-            12.into(),
-        ])
+        .json(serde_json::to_value(item).unwrap())
         .build(PostgresQueryBuilder);
 
     let result = client.execute(sql.as_str(), &Values::from(values).as_params());
@@ -37,7 +47,7 @@ fn main() {
 
     let (sql, values) = Query::select()
         .columns(vec![
-            Character::Id, Character::Character, Character::FontSize
+            Character::Id, Character::Character, Character::FontSize, Character::JsonField,
         ])
         .from(Character::Table)
         .order_by(Character::Id, Order::Desc)
@@ -60,7 +70,7 @@ fn main() {
     let (sql, values) = Query::update()
         .table(Character::Table)
         .values(vec![
-            (Character::FontSize, 24.into()),
+            (Character::FontSize, 24i64.into()),
         ])
         .and_where(Expr::col(Character::Id).eq(id))
         .build(PostgresQueryBuilder);
@@ -72,7 +82,7 @@ fn main() {
 
     let (sql, values) = Query::select()
         .columns(vec![
-            Character::Id, Character::Character, Character::FontSize
+            Character::Id, Character::Character, Character::FontSize, Character::JsonField,
         ])
         .from(Character::Table)
         .order_by(Character::Id, Order::Desc)
@@ -116,13 +126,15 @@ enum Character {
     Id,
     Character,
     FontSize,
+    JsonField,
 }
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize)]
 struct CharacterStruct {
-    id: i32,
+    id: i64,
     character: String,
-    font_size: i32,
+    font_size: i64,
+    json_field: serde_json::Value,
 }
 
 impl From<Row> for CharacterStruct {
@@ -131,6 +143,7 @@ impl From<Row> for CharacterStruct {
             id: row.get("id"),
             character: row.get("character"),
             font_size: row.get("font_size"),
+            json_field: row.get("json_field"),
         }
     }
 }
